@@ -1,24 +1,24 @@
 #include <MIDI.h>
+#include <TimerOne.h>
 
 MIDI_CREATE_DEFAULT_INSTANCE();
+
+#define LAMP_COUNT 2
 
 const int led = 13;
 
 const int pir = 9;
 const int zero_cross_pin = 3;
-const int lamps[] = {6, 5};
+const int lamps[LAMP_COUNT] = {6, 5};
 
 bool events_enable = false;
 bool pir_state = false;
 
 void handle_note_on(byte channel, byte note, byte velocity) {
   if(note == 60) {
-    // analogWrite(3, velocity);
-    set_lamp_value(velocity * 8, 0);
+    set_lamp_value(velocity, 1);
   } else if(note == 61) {
-    // analogWrite(5, velocity);
-  } else if(note == 62) {
-    // analogWrite(6, velocity);
+    set_lamp_value(velocity, 0);
   } else if(note == 63) {
     digitalWrite(led, velocity > 64 ? HIGH : LOW);
   } else if(note == 64) {
@@ -37,28 +37,45 @@ void handle_note_off(byte channel, byte note, byte velocity) {
 
 void handle_cc(byte channel, byte number, byte value) {
   if(number == 1) {
-    // analogWrite(3, value * 2);
-    set_lamp_value(value * 8, 0);
+    set_lamp_value(value, 1);
   } else if(number == 2) {
-    // analogWrite(5, value * 2);
-  } else if(number == 3) {
-    // analogWrite(6, value * 2);
+    set_lamp_value(value, 0);
   }
 }
 
-int lamps_value[] = {2000, 2000};
+int lamps_value[LAMP_COUNT] = {0, 0};
 
-void zero_cross() {
-  delayMicroseconds(lamps_value[0]);
-  // digitalWrite(lamps[0], HIGH);
-  digitalWrite(lamps[1], HIGH);
-  delayMicroseconds(100);
-  // digitalWrite(lamps[0], LOW);
-  digitalWrite(lamps[1], LOW);
+volatile int t = 0;             // Variable to use as a counter
+volatile bool zero_cross = 0; // Boolean to store a "switch" to tell us if we have
+const int FREQ_STEP = 73;
+
+void handle_zero_cross() {
+  zero_cross = true;
+}
+
+void dim_check() {
+  if(zero_cross) {
+    for(uint8_t i = 0; i < LAMP_COUNT; i++) {
+      if(t >= lamps_value[i]) {
+        digitalWrite(lamps[i], HIGH);
+      }
+    }
+
+    if(t > 127) {
+      t = 0;
+      zero_cross = false;
+    } else {
+      t++;
+    }
+  } else {
+    for(uint8_t i = 0; i < LAMP_COUNT; i++) {
+      digitalWrite(lamps[i], LOW);
+    }
+  }
 }
 
 void set_lamp_value(int value, int idx) {
-  lamps_value[idx] = 2000 + (1023 - value) * 6;
+  lamps_value[idx] = 127 - value;
 }
 
 
@@ -71,7 +88,9 @@ void setup() {
 
   pinMode(pir, INPUT);
 
-  attachInterrupt(digitalPinToInterrupt(zero_cross_pin), zero_cross, RISING);
+  attachInterrupt(digitalPinToInterrupt(zero_cross_pin), handle_zero_cross, RISING);
+  Timer1.initialize(FREQ_STEP);
+  Timer1.attachInterrupt(dim_check, FREQ_STEP);
 
   MIDI.begin(MIDI_CHANNEL_OMNI);
   MIDI.setHandleNoteOn(handle_note_on);
@@ -102,24 +121,10 @@ void loop() {
       pir_state = true;
     }
   }
-  
-  /*for(size_t i = 0; i < sizeof(notes)/sizeof(notes[0]); i++) {
-    MIDI.sendNoteOn(notes[i], 127, 2);
-    delay(250);
-    MIDI.sendNoteOff(notes[i], 127, 2);
-    delay(100);
-  }*/
 
-  /*digitalWrite(lamps[0], HIGH);
-  delay(500);
-  digitalWrite(lamps[0], LOW);
-  delay(500);
-  digitalWrite(lamps[1], HIGH);
-  delay(500);
-  digitalWrite(lamps[1], LOW);
-  delay(500);*/
-  /*for(int i = 0; i < 1023; i += 10) {
-    set_lamp_value(i, 0);
-    delay(10);
+  /*for(int i = 0; i < 127; i++) {
+    set_lamp_value(127 - i, 0);
+    set_lamp_value(i, 1);
+    delay(3);
   }*/
 }
